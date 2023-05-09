@@ -17,6 +17,7 @@
     "express": "^4.18.2",
     "express-session": "^1.17.3",
     "formidable": "^2.1.1",
+    "path": "^0.12.7",
     "pg": "^8.10.0",
     "postgresql": "^0.0.1"
   },

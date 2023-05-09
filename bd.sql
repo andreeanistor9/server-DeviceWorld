@@ -76,7 +76,7 @@ SET default_table_access_method = heap;
 --
 
 CREATE TABLE public.products (
-    id integer NOT NULL,
+    id serial primary key,
     name character varying(50) NOT NULL,
     description text,
     product_type public.types DEFAULT 'phone'::public.types,
@@ -136,7 +136,7 @@ ALTER SEQUENCE public.todo_id_seq OWNED BY public.todo.id;
 --
 
 CREATE TABLE public.users (
-    id integer NOT NULL,
+    id serial primary key,
     username character varying(50) NOT NULL,
     first_name character varying(100) NOT NULL,
     last_name character varying(100) NOT NULL,
