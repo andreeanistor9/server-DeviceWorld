@@ -3,7 +3,6 @@ const { Client } = require("pg");
 const session = require("express-session");
 const app = express();
 const bcrypt = require("bcrypt");
-require("dotenv").config();
 
 app.use(express.json());
 
