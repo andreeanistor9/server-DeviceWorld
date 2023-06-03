@@ -156,23 +156,25 @@ app.get("/products", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch products" });
   }
 });
-// app.get("/product/:id", async (req, res) => {
-//   try {
-//     const id = req.params.id;
-//     const query = "SELECT * FROM products WHERE id = $1";
-//     const result = await client.query(query, [id]);
+app.get("/product/:id", async (req, res) => {
+  try {
+    const id = req.params.id;
+    console.log("id" + id);
+    const query = "SELECT * FROM products WHERE id = $1";
+    const result = await client.query(query, [id]);
 
-//     if (result.rows.length === 0) {
-//       return res.status(404).json({ error: "Product not found" });
-//     }
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Product not found" });
+    }
 
-//     const product = result.rows[0];
-//     res.json({ product });
-//   } catch (err) {
-//     console.error(err);
-//     res.status(500).json({ error: "Failed to fetch product" });
-//   }
-// });
+    const product = result.rows[0];
+    console.log(product);
+    res.json({ product });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch product" });
+  }
+});
 
 app.get("/logout", (req, res) => {
   // if (req.session.user) {
@@ -193,7 +195,7 @@ app.post("/cart/add", (req, res) => {
   try {
     const { productId, name, price } = req.body;
     const cartItem = { productId, name, price };
-    
+
     // Check if the cart exists in the session
     if (!req.session.cart) {
       req.session.cart = [];
@@ -204,12 +206,13 @@ app.post("/cart/add", (req, res) => {
     res.json({ message: "Product added to cart successfully." });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: "An error occurred while adding the product to the cart." });
+    res.status(500).json({
+      error: "An error occurred while adding the product to the cart.",
+    });
   }
 });
 
-
-app.get("/cart",(req, res) => {
+app.get("/cart", (req, res) => {
   try {
     // Check if the cart exists in the session
     if (!req.session.cart) {
@@ -220,7 +223,9 @@ app.get("/cart",(req, res) => {
     res.json({ cartItems: req.session.cart });
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: "An error occurred while fetching cart items." });
+    res
+      .status(500)
+      .json({ error: "An error occurred while fetching cart items." });
   }
 });
 app.delete("/cart/remove/:productId", (req, res) => {
@@ -229,9 +234,11 @@ app.delete("/cart/remove/:productId", (req, res) => {
     if (!req.session.cart) {
       req.session.cart = [];
     }
-    
-    let index = req.session.cart.findIndex(item => item.productId == productId);
-   
+
+    let index = req.session.cart.findIndex(
+      (item) => item.productId == productId
+    );
+
     if (index !== -1) {
       req.session.cart.splice(index, 1);
       res.json({ message: "Product removed from cart successfully." });
@@ -240,7 +247,9 @@ app.delete("/cart/remove/:productId", (req, res) => {
     }
   } catch (err) {
     console.error(err.message);
-    res.status(500).json({ error: "An error occurred while removing the product from the cart." });
+    res.status(500).json({
+      error: "An error occurred while removing the product from the cart.",
+    });
   }
 });
 app.post("/order", async (req, res) => {
@@ -251,7 +260,10 @@ app.post("/order", async (req, res) => {
 
     const userId = req.session.user.id;
     const cartItems = req.session.cart;
-    const totalPrice = cartItems.reduce((total, item) => total + parseInt(item.price), 0);
+    const totalPrice = cartItems.reduce(
+      (total, item) => total + parseInt(item.price),
+      0
+    );
     const address = req.body.address;
     const order = await client.query(
       "INSERT INTO orders (user_id, total_price, address) VALUES ($1, $2, $3) RETURNING id",
@@ -288,7 +300,7 @@ app.get("/orders", async (req, res) => {
       "SELECT id, total_price, address FROM orders WHERE user_id = $1 ORDER BY id DESC",
       [userId]
     );
-     
+
     // Fetch order items for each order
     const orderItemsPromises = userOrders.rows.map(async (order) => {
       const orderItems = await client.query(
@@ -317,8 +329,6 @@ app.get("/orders", async (req, res) => {
     res.status(500).json({ error: "Failed to fetch orders" });
   }
 });
-
-
 
 app.listen(5000, () => {
   console.log("Server started on port 5000");
