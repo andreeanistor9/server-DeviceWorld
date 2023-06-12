@@ -24,7 +24,7 @@ app.use(
   session({
     store: new pgSession({
       conString: "postgres://Andreea Nistor:parola@localhost/db_electronix",
-      tableName: "session",
+      //tableName: "session",
     }),
     secret: "abcdefg",
     resave: true,
@@ -54,7 +54,7 @@ app.post("/login", async (req, res) => {
   const { username, password } = req.body;
   // const hashedPassword = await bcrypt.hash(password, 10);
   const potentialLogin = await client.query(
-    "SELECT username, password, first_name, last_name, email, id FROM users WHERE username=$1",
+    "SELECT username, password, first_name, last_name, email, id, role FROM users WHERE username=$1",
     [username]
   );
   if (potentialLogin.rowCount > 0) {
@@ -69,8 +69,9 @@ app.post("/login", async (req, res) => {
         first_name: potentialLogin.rows[0].first_name,
         last_name: potentialLogin.rows[0].last_name,
         email: potentialLogin.rows[0].email,
+        role: potentialLogin.rows[0].role,
       };
-      res.json({ loggedIn: true });
+      res.json({ loggedIn: true, user: potentialLogin.rows[0] });
     } else {
       res.json({ loggedIn: false, status: "Wrong username or password!" });
       console.log("not good");
@@ -79,9 +80,40 @@ app.post("/login", async (req, res) => {
     res.json({ loggedIn: false, status: "Wrong username or password" });
   }
 });
+
 app.post("/signup", async (req, res) => {
   try {
     const { username, firstName, lastName, email, password } = req.body;
+    const usernameRegex = /^[A-Za-z0-9_.]+$/;
+    const firstNameRegex = /^[A-Za-z\s-]+$/;
+    const lastNameRegex = /^[A-Za-z\s-]+$/;
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const passwordRegex =
+      /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()])[a-zA-Z\d!@#$%^&*()]+$/;
+
+    if (!username.match(usernameRegex)) {
+      return res
+        .status(400)
+        .json({ loggedIn: false, status: "Invalid username" });
+    }
+    if (!firstName.match(firstNameRegex)) {
+      return res
+        .status(400)
+        .json({ loggedIn: false, status: "Invalid first name" });
+    }
+    if (!lastName.match(lastNameRegex)) {
+      return res
+        .status(400)
+        .json({ loggedIn: false, status: "Invalid last name" });
+    }
+    if (!email.match(emailRegex)) {
+      return res.status(400).json({ loggedIn: false, status: "Invalid email" });
+    }
+    if (!password.match(passwordRegex)) {
+      return res
+        .status(400)
+        .json({ loggedIn: false, status: "Invalid password" });
+    }
     const existingUser = await client.query(
       `SELECT username from users where username=$1`,
       [username]
@@ -119,6 +151,134 @@ app.get("/users", async (req, res) => {
     }
   } catch (err) {
     console.log(err.message);
+  }
+});
+app.put("/users/:id", async (req, res) => {
+  try {
+    if (req.session && req.session.user && req.session.user.role === "admin") {
+      const { id } = req.params;
+      const { firstName, lastName, username, email, role } = req.body;
+      const validRoles = ["admin", "customer", "moderator"];
+      if (!validRoles.includes(role)) {
+        return res.status(400).json({ error: "Invalid role value" });
+      }
+      const updatedUser = await client.query(
+        "UPDATE users SET first_name = $1, last_name = $2, username = $3, email = $4, role = $5 WHERE id = $6 RETURNING *",
+        [firstName, lastName, username, email, role, id]
+      );
+      res.json(updatedUser.rows[0]);
+    } else {
+      res.status(401).json({ error: "Unauthorized" });
+    }
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+app.delete("/users/remove/:id", async (req, res) => {
+  try {
+    if (req.session && req.session.user && req.session.user.role === "admin") {
+      const { id } = req.params;
+      const user = await client.query("SELECT * FROM users WHERE id = $1", [
+        id,
+      ]);
+      if (user.rows.length === 0) {
+        return res.status(404).json({ error: "User not found in the list" });
+      }
+
+      await client.query("DELETE FROM users WHERE id=$1", [id]);
+
+      res.json({ message: "User removed from cart successfully." });
+    } else {
+      res.status(401).json({ error: "Unauthorized" });
+    }
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      error: "An error occurred while removing user from the list.",
+    });
+  }
+});
+app.post("/addNewProduct", async (req, res) => {
+  try {
+    if (req.session && req.session.user && req.session.user.role === "admin") {
+      const {
+        name,
+        description,
+        price,
+        brand,
+        product_type,
+        color,
+        quantity,
+        specifications,
+        image,
+      } = req.body;
+
+      await client.query(
+        "INSERT INTO products (name, description,price,brand,product_type,color,quantity,specifications, image) values ($1, $2, $3, $4, $5, $6,$7, $8, $9) RETURNING *",
+        [
+          name,
+          description,
+          price,
+          brand,
+          product_type,
+          color,
+          quantity,
+          specifications,
+          image,
+        ]
+      );
+      res.json({ added: true });
+    } else {
+      res.status(401).json({ added: false, error: "Unauthorized" });
+    }
+  } catch (err) {
+    console.log(err.message);
+    res.status(500).json({ added: false, error: "Error adding product" });
+  }
+});
+app.put("/manageProducts/:id", async (req, res) => {
+  try {
+    if (req.session && req.session.user && req.session.user.role === "admin") {
+      const { id } = req.params;
+      const { name, description, price, brand, product_type, color, quantity } =
+        req.body;
+
+      const updatedProduct = await client.query(
+        "UPDATE products SET name = $1, description = $2, price = $3, brand = $4, product_type = $5, color = $6, quantity = $7 WHERE id = $8 RETURNING *",
+        [name, description, price, brand, product_type, color, quantity, id]
+      );
+      res.json(updatedProduct.rows[0]);
+    } else {
+      res.status(401).json({ error: "Unauthorized" });
+    }
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Server Error" });
+  }
+});
+app.delete("/manageProducts/remove/:id", async (req, res) => {
+  try {
+    if (req.session && req.session.user && req.session.user.role === "admin") {
+      const { id } = req.params;
+      const user = await client.query("SELECT * FROM products WHERE id = $1", [
+        id,
+      ]);
+      if (user.rows.length === 0) {
+        return res.status(404).json({ error: "Product not found in the list" });
+      }
+
+      await client.query("DELETE FROM products WHERE id=$1", [id]);
+
+      res.json({ message: "Product removed from cart successfully." });
+    } else {
+      res.status(401).json({ error: "Unauthorized" });
+    }
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      error: "An error occurred while removing product from the list.",
+    });
   }
 });
 app.get("/products", async (req, res) => {
@@ -159,7 +319,6 @@ app.get("/products", async (req, res) => {
 app.get("/product/:id", async (req, res) => {
   try {
     const id = req.params.id;
-    console.log("id" + id);
     const query = "SELECT * FROM products WHERE id = $1";
     const result = await client.query(query, [id]);
 
@@ -168,7 +327,6 @@ app.get("/product/:id", async (req, res) => {
     }
 
     const product = result.rows[0];
-    console.log(product);
     res.json({ product });
   } catch (err) {
     console.error(err);
@@ -191,19 +349,56 @@ app.get("/logout", (req, res) => {
   // }
 });
 
-app.post("/cart/add", (req, res) => {
+app.post("/cart/add", async (req, res) => {
   try {
-    const { productId, name, price } = req.body;
-    const cartItem = { productId, name, price };
+    const { productId, name, price, photo, quantity, brand, product_type } =
+      req.body;
+    const cartItem = {
+      productId,
+      name,
+      price,
+      photo,
+      quantity,
+      brand,
+      product_type,
+    };
 
-    // Check if the cart exists in the session
-    if (!req.session.cart) {
-      req.session.cart = [];
+    // Check if the user is logged in
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
-    // Add the product to the cart
-    req.session.cart.push(cartItem);
-    console.log(cartItem.name); // Access name from cartItem instead of directly from req.body
-    res.json({ message: "Product added to cart successfully." });
+
+    const userId = req.session.user.id;
+
+    // Fetch the user's current cart
+    const userCart = await client.query(
+      "SELECT cart FROM users WHERE id = $1",
+      [userId]
+    );
+
+    let currentCart = userCart.rows.length > 0 ? userCart.rows[0].cart : [];
+
+    // Convert the currentCart to an array if it's not already
+    if (!Array.isArray(currentCart)) {
+      currentCart = [];
+    }
+
+    const itemIndex = currentCart.findIndex(
+      (item) => item.productId === productId
+    );
+
+    if (itemIndex !== -1) {
+      return res.json({ message: "Product already in the cart." });
+    }
+
+    const updatedCart = [...currentCart, cartItem];
+
+    await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
+      updatedCart,
+      userId,
+    ]);
+
+    res.json({ message: "success" });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({
@@ -212,44 +407,161 @@ app.post("/cart/add", (req, res) => {
   }
 });
 
-app.get("/cart", (req, res) => {
+app.get("/cart", async (req, res) => {
   try {
-    // Check if the cart exists in the session
-    if (!req.session.cart) {
-      req.session.cart = [];
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    // Send the JSON response with the cart items
-    res.json({ cartItems: req.session.cart });
+    const userId = req.session.user.id;
+    const userCart = await client.query(
+      "SELECT cart FROM users WHERE id = $1",
+      [userId]
+    );
+
+    const cartItems = userCart.rows.length > 0 ? userCart.rows[0].cart : [];
+    res.json({ cartItems, cart_length: cartItems.length });
   } catch (err) {
     console.error(err.message);
-    res
-      .status(500)
-      .json({ error: "An error occurred while fetching cart items." });
+    res.status(500).json({ error: "Failed to fetch the cart items" });
   }
 });
-app.delete("/cart/remove/:productId", (req, res) => {
+
+app.delete("/cart/remove/:productId", async (req, res) => {
   try {
-    const productId = req.params.productId;
-    if (!req.session.cart) {
-      req.session.cart = [];
+    const { productId } = req.params;
+
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
     }
 
-    let index = req.session.cart.findIndex(
+    const userId = req.session.user.id;
+
+    const userCart = await client.query(
+      "SELECT cart FROM users WHERE id = $1",
+      [userId]
+    );
+
+    const currentCart = userCart.rows.length > 0 ? userCart.rows[0].cart : [];
+
+    const itemIndex = currentCart.findIndex(
       (item) => item.productId == productId
     );
 
-    if (index !== -1) {
-      req.session.cart.splice(index, 1);
-      res.json({ message: "Product removed from cart successfully." });
-    } else {
-      res.status(404).json({ error: "Product not found in the cart." });
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: "Product not found in the cart." });
     }
+
+    currentCart.splice(itemIndex, 1);
+
+    await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
+      currentCart,
+      userId,
+    ]);
+
+    res.json({ message: "Product removed from cart successfully." });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({
       error: "An error occurred while removing the product from the cart.",
     });
+  }
+});
+app.put("/cart/update/:productId", async (req, res) => {
+  try {
+    const { productId } = req.params;
+    const { quantity } = req.body;
+
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const userId = req.session.user.id;
+
+    const userCart = await client.query(
+      "SELECT cart FROM users WHERE id = $1",
+      [userId]
+    );
+
+    const currentCart = userCart.rows.length > 0 ? userCart.rows[0].cart : [];
+
+    const itemIndex = currentCart.findIndex(
+      (item) => item.productId == productId
+    );
+
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: "Product not found in the cart." });
+    }
+
+    currentCart[itemIndex].quantity = quantity;
+
+    await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
+      currentCart,
+      userId,
+    ]);
+
+    res.json({ message: "Product quantity updated successfully." });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      error:
+        "An error occurred while updating the product quantity in the cart.",
+    });
+  }
+});
+
+app.post("/order", async (req, res) => {
+  try {
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const userId = req.session.user.id;
+    const userCart = await client.query(
+      "SELECT cart FROM users WHERE id = $1",
+      [userId]
+    );
+    const cartItems = userCart.rows[0].cart;
+    const totalPrice = cartItems.reduce(
+      (total, item) => total + parseInt(item.price) * parseInt(item.quantity),
+      0
+    );
+
+    const address = req.body.address;
+    const order = await client.query(
+      "INSERT INTO orders (user_id, total_price, address) VALUES ($1, $2, $3) RETURNING id",
+      [userId, totalPrice, address]
+    );
+    const orderId = order.rows[0].id;
+    const orderItems = cartItems.map((item) => {
+      return client.query(
+        "INSERT INTO order_items (order_id, product_id, name, price, photo, quantity) VALUES ($1, $2, $3, $4, $5, $6)",
+        [
+          orderId,
+          item.productId,
+          item.name,
+          item.price,
+          item.photo,
+          item.quantity,
+        ]
+      );
+    });
+
+    await Promise.all(orderItems);
+
+    // Clear the cart column in the users table
+    await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
+      [],
+      userId,
+    ]);
+
+    // Clear the session cart
+    req.session.cart = [];
+
+    res.json({ success: true, orderId: orderId });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Failed to process the order" });
   }
 });
 app.post("/order", async (req, res) => {
@@ -259,33 +571,56 @@ app.post("/order", async (req, res) => {
     }
 
     const userId = req.session.user.id;
-    const cartItems = req.session.cart;
+    const userCart = await client.query(
+      "SELECT cart FROM users WHERE id = $1",
+      [userId]
+    );
+    const cartItems = userCart.rows[0].cart;
     const totalPrice = cartItems.reduce(
-      (total, item) => total + parseInt(item.price),
+      (total, item) => total + parseInt(item.price) * parseInt(item.quantity),
       0
     );
+
     const address = req.body.address;
     const order = await client.query(
       "INSERT INTO orders (user_id, total_price, address) VALUES ($1, $2, $3) RETURNING id",
       [userId, totalPrice, address]
     );
     const orderId = order.rows[0].id;
-    const orderItems = cartItems.map((item) => {
+
+    const orderItemsPromises = cartItems.map((item) => {
       return client.query(
-        "INSERT INTO order_items (order_id, product_id, name, price) VALUES ($1, $2, $3, $4)",
-        [orderId, item.productId, item.name, item.price]
+        "INSERT INTO order_items (order_id, product_id, name, price, photo, quantity) VALUES ($1, $2, $3, $4, $5, $6)",
+        [
+          orderId,
+          item.productId,
+          item.name,
+          item.price,
+          item.photo,
+          item.quantity,
+        ]
       );
     });
 
-    await Promise.all(orderItems);
+    const orderItems = await Promise.all(orderItemsPromises);
+    console.log(orderItems);
+
+    // Clear the cart column in the users table
+    await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
+      [],
+      userId,
+    ]);
+
     // Clear the session cart
     req.session.cart = [];
+
     res.json({ success: true, orderId: orderId });
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: "Failed to process the order" });
   }
 });
+
 app.get("/orders", async (req, res) => {
   try {
     // Check if the user is logged in
@@ -301,19 +636,16 @@ app.get("/orders", async (req, res) => {
       [userId]
     );
 
-    // Fetch order items for each order
     const orderItemsPromises = userOrders.rows.map(async (order) => {
       const orderItems = await client.query(
-        "SELECT name, price FROM order_items WHERE order_id = $1",
+        "SELECT name, price, photo, quantity FROM order_items WHERE order_id = $1",
         [order.id]
       );
       return orderItems.rows;
     });
 
-    // Wait for all order items promises to resolve
     const orderItems = await Promise.all(orderItemsPromises);
 
-    // Combine orders and order items into a single response object
     const responseData = userOrders.rows.map((order, index) => {
       return {
         id: order.id,
@@ -327,6 +659,126 @@ app.get("/orders", async (req, res) => {
   } catch (err) {
     console.error(err.message);
     res.status(500).json({ error: "Failed to fetch orders" });
+  }
+});
+
+app.post("/wishlist/add", async (req, res) => {
+  try {
+    const { productId, name, price, photo } = req.body;
+    const wishlistItem = { productId, name, price, photo };
+
+    // Check if the user is logged in
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const userId = req.session.user.id;
+
+    // Fetch the user's current wishlist
+    const userWishlist = await client.query(
+      "SELECT wishlist FROM users WHERE id = $1",
+      [userId]
+    );
+
+    const currentWishlist =
+      userWishlist.rows.length > 0 ? userWishlist.rows[0].wishlist : [];
+
+    const itemIndex = currentWishlist.findIndex(
+      (item) => item.productId == productId
+    );
+
+    if (itemIndex !== -1) {
+      currentWishlist.splice(itemIndex, 1);
+      await client.query("UPDATE users SET wishlist = $1 WHERE id = $2", [
+        currentWishlist,
+        userId,
+      ]);
+      return res.json({
+        message: "Product removed from wishlist.",
+        removed: true,
+        added: false,
+      });
+    }
+
+    const updatedWishlist = [...currentWishlist, wishlistItem];
+
+    await client.query("UPDATE users SET wishlist = $1 WHERE id = $2", [
+      updatedWishlist,
+      userId,
+    ]);
+
+    res.json({
+      message: "Product added to wishlist successfully.",
+      removed: false,
+      added: true,
+    });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      error: "An error occurred while adding the product to the wishlist.",
+    });
+  }
+});
+
+app.get("/wishlist", async (req, res) => {
+  try {
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const userId = req.session.user.id;
+    const userWishlist = await client.query(
+      "SELECT wishlist FROM users WHERE id = $1",
+      [userId]
+    );
+    const wishlistItems = userWishlist.rows[0].wishlist || [];
+
+    res.json({ wishlistItems });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Failed to fetch the wishlist" });
+  }
+});
+app.delete("/wishlist/remove/:productId", async (req, res) => {
+  try {
+    const { productId } = req.params;
+
+    // Check if the user is logged in
+    if (!req.session.user) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    const userId = req.session.user.id;
+
+    // Fetch the user's current wishlist
+    const userWishlist = await client.query(
+      "SELECT wishlist FROM users WHERE id = $1",
+      [userId]
+    );
+
+    const currentWishlist =
+      userWishlist.rows.length > 0 ? userWishlist.rows[0].wishlist : [];
+
+    const itemIndex = currentWishlist.findIndex(
+      (item) => item.productId == productId
+    );
+
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: "Product not found in wishlist." });
+    }
+
+    currentWishlist.splice(itemIndex, 1);
+
+    await client.query("UPDATE users SET wishlist = $1 WHERE id = $2", [
+      currentWishlist,
+      userId,
+    ]);
+
+    res.json({ message: "Product removed from wishlist successfully." });
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({
+      error: "An error occurred while removing the product from the wishlist.",
+    });
   }
 });
 

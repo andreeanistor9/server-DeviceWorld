@@ -635,3 +635,5 @@ ALTER TABLE ONLY public.orders
 -- PostgreSQL database dump complete
 --
 
+ALTER TABLE users
+ADD COLUMN wishlist JSONB;
