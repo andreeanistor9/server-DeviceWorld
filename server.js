@@ -45,12 +45,7 @@ app.use((req, res, next) => {
   }
   next();
 });
-app.get("/", (req, res) => {
-  res.send("Welcome to my app");
-});
-// module.exports = function(app) {
-//   app.use(proxy('/api', { target: 'http://localhost:5000' }));
-// };
+
 const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 5, // Limit each IP to 5 requests per windowMs
@@ -154,18 +149,31 @@ app.get("/users", async (req, res) => {
   try {
     if (req.session && req.session.user && req.session.user.role === "admin") {
       const allUsers = await client.query("SELECT * from users");
-      res.json(allUsers.rows);
+      const userId = req.session.user.id;
+      const currentUser = await client.query(
+        `SELECT * from users where id=$1`,
+        [userId]
+      );
+      res.json({ allUsers: allUsers.rows, current_user: currentUser.rows[0] });
+    } else if (req.session.user.role === "customer") {
+      const userId = req.session.user.id;
+      const currentUser = await client.query(
+        `SELECT * from users where id=$1`,
+        [userId]
+      );
+      res.json({ current_user: currentUser.rows[0] });
     }
   } catch (err) {
     console.log(err.message);
   }
 });
+
 app.put("/users/:id", async (req, res) => {
   try {
     if (req.session && req.session.user && req.session.user.role === "admin") {
       const { id } = req.params;
       const { firstName, lastName, username, email, role } = req.body;
-      const validRoles = ["admin", "customer", "moderator"];
+      const validRoles = ["admin", "customer"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({ error: "Invalid role value" });
       }
@@ -561,6 +569,13 @@ app.post("/order", async (req, res) => {
 
     await Promise.all(orderItems);
 
+    cartItems.map((item) =>
+      client.query(
+        "UPDATE products SET quantity = quantity - $1 WHERE id = $2",
+        [parseInt(item.quantity), item.productId]
+      )
+    );
+
     // Clear the cart column in the users table
     await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
       [],
@@ -616,7 +631,12 @@ app.post("/order", async (req, res) => {
 
     const orderItems = await Promise.all(orderItemsPromises);
     console.log(orderItems);
-
+    cartItems.map((item) =>
+      client.query(
+        "UPDATE products SET quantity = quantity - $1 WHERE id = $2",
+        [parseInt(item.quantity), item.productId]
+      )
+    );
     // Clear the cart column in the users table
     await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
       [],
