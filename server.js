@@ -4,9 +4,11 @@ const session = require("express-session");
 const pgSession = require("connect-pg-simple")(session);
 const app = express();
 const bcrypt = require("bcrypt");
-
+const rateLimit = require("express-rate-limit");
+const helmet = require("helmet");
 app.use(express.json());
 
+app.use(helmet());
 var client = new Client({
   user: "Andreea Nistor",
   password: "parola",
@@ -49,8 +51,13 @@ app.get("/", (req, res) => {
 // module.exports = function(app) {
 //   app.use(proxy('/api', { target: 'http://localhost:5000' }));
 // };
+const loginRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 requests per windowMs
+  message: "Too many login attempts. Please try again later.",
+});
 
-app.post("/login", async (req, res) => {
+app.post("/login", loginRateLimiter, async (req, res) => {
   const { username, password } = req.body;
   // const hashedPassword = await bcrypt.hash(password, 10);
   const potentialLogin = await client.query(
@@ -120,18 +127,18 @@ app.post("/signup", async (req, res) => {
     );
     if (existingUser.rowCount === 0) {
       const hashedPassword = await bcrypt.hash(password, 10);
-      const newUser = await client.query(
+      const signupUser = await client.query(
         "INSERT INTO users (username, first_name, last_name, email, password) values ($1, $2, $3, $4, $5) RETURNING *",
         [username, firstName, lastName, email, hashedPassword]
       );
       req.session.user = {
-        id: newUser.rows[0].id,
-        username: newUser.rows[0].username,
-        first_name: newUser.rows[0].first_name,
-        last_name: newUser.rows[0].last_name,
-        email: newUser.rows[0].email,
+        id: signupUser.rows[0].id,
+        username: signupUser.rows[0].username,
+        first_name: signupUser.rows[0].first_name,
+        last_name: signupUser.rows[0].last_name,
+        email: signupUser.rows[0].email,
       };
-      res.json({ loggedIn: true, user: newUser.rows[0] });
+      res.json({ loggedIn: true, user: signupUser.rows[0] });
     } else {
       res
         .status(400)
@@ -261,10 +268,11 @@ app.delete("/manageProducts/remove/:id", async (req, res) => {
   try {
     if (req.session && req.session.user && req.session.user.role === "admin") {
       const { id } = req.params;
-      const user = await client.query("SELECT * FROM products WHERE id = $1", [
-        id,
-      ]);
-      if (user.rows.length === 0) {
+      const product = await client.query(
+        "SELECT * FROM products WHERE id = $1",
+        [id]
+      );
+      if (product.rows.length === 0) {
         return res.status(404).json({ error: "Product not found in the list" });
       }
 
@@ -376,7 +384,8 @@ app.post("/cart/add", async (req, res) => {
       [userId]
     );
 
-    let currentCart = userCart.rows.length > 0 ? userCart.rows[0].cart : [];
+    let currentCart =
+      userCart.rows.length > 0 && userCart.rows[0] ? userCart.rows[0].cart : [];
 
     // Convert the currentCart to an array if it's not already
     if (!Array.isArray(currentCart)) {
@@ -419,7 +428,10 @@ app.get("/cart", async (req, res) => {
       [userId]
     );
 
-    const cartItems = userCart.rows.length > 0 ? userCart.rows[0].cart : [];
+    const cartItems =
+      userCart.rows.length > 0 && userCart.rows[0].cart
+        ? userCart.rows[0].cart
+        : [];
     res.json({ cartItems, cart_length: cartItems.length });
   } catch (err) {
     console.error(err.message);
@@ -680,9 +692,13 @@ app.post("/wishlist/add", async (req, res) => {
       [userId]
     );
 
-    const currentWishlist =
-      userWishlist.rows.length > 0 ? userWishlist.rows[0].wishlist : [];
-
+    let currentWishlist =
+      userWishlist.rows.length > 0 && userWishlist.rows[0]
+        ? userWishlist.rows[0].wishlist
+        : [];
+    if (!Array.isArray(currentWishlist)) {
+      currentWishlist = [];
+    }
     const itemIndex = currentWishlist.findIndex(
       (item) => item.productId == productId
     );
@@ -730,7 +746,10 @@ app.get("/wishlist", async (req, res) => {
       "SELECT wishlist FROM users WHERE id = $1",
       [userId]
     );
-    const wishlistItems = userWishlist.rows[0].wishlist || [];
+    const wishlistItems =
+      userWishlist.rows.length > 0 && userWishlist.rows[0]
+        ? userWishlist.rows[0].wishlist
+        : [];
 
     res.json({ wishlistItems });
   } catch (err) {
