@@ -26,7 +26,7 @@ app.use(
   session({
     store: new pgSession({
       conString: "postgres://Andreea Nistor:parola@localhost/db_electronix",
-      //tableName: "session",
+      tableName: "session",
     }),
     secret: "abcdefg",
     resave: true,
@@ -132,7 +132,9 @@ app.post("/signup", async (req, res) => {
         first_name: signupUser.rows[0].first_name,
         last_name: signupUser.rows[0].last_name,
         email: signupUser.rows[0].email,
+        role: signupUser.rows[0].role,
       };
+
       res.json({ loggedIn: true, user: signupUser.rows[0] });
     } else {
       res
@@ -369,7 +371,6 @@ app.get("/product/:id", async (req, res) => {
 });
 
 app.get("/logout", (req, res) => {
-  // if (req.session.user) {
   req.session.destroy((err) => {
     if (err) {
       console.log(err);
@@ -378,9 +379,6 @@ app.get("/logout", (req, res) => {
       res.redirect("/");
     }
   });
-  // } else {
-  //   res.redirect("/");
-  // }
 });
 
 app.post("/cart/add", async (req, res) => {
