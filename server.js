@@ -256,12 +256,30 @@ app.put("/manageProducts/:id", async (req, res) => {
   try {
     if (req.session && req.session.user && req.session.user.role === "admin") {
       const { id } = req.params;
-      const { name, description, price, brand, product_type, color, quantity } =
-        req.body;
+      const {
+        name,
+        description,
+        old_price,
+        price,
+        brand,
+        product_type,
+        color,
+        quantity,
+      } = req.body;
 
       const updatedProduct = await client.query(
-        "UPDATE products SET name = $1, description = $2, price = $3, brand = $4, product_type = $5, color = $6, quantity = $7 WHERE id = $8 RETURNING *",
-        [name, description, price, brand, product_type, color, quantity, id]
+        "UPDATE products SET name = $1, description = $2, old_price = $3, price = $4, brand = $5, product_type = $6, color = $7, quantity = $8 WHERE id = $9 RETURNING *",
+        [
+          name,
+          description,
+          old_price,
+          price,
+          brand,
+          product_type,
+          color,
+          quantity,
+          id,
+        ]
       );
       res.json(updatedProduct.rows[0]);
     } else {
@@ -576,67 +594,6 @@ app.post("/order", async (req, res) => {
       )
     );
 
-    // Clear the cart column in the users table
-    await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
-      [],
-      userId,
-    ]);
-
-    // Clear the session cart
-    req.session.cart = [];
-
-    res.json({ success: true, orderId: orderId });
-  } catch (err) {
-    console.error(err.message);
-    res.status(500).json({ error: "Failed to process the order" });
-  }
-});
-app.post("/order", async (req, res) => {
-  try {
-    if (!req.session.user) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-
-    const userId = req.session.user.id;
-    const userCart = await client.query(
-      "SELECT cart FROM users WHERE id = $1",
-      [userId]
-    );
-    const cartItems = userCart.rows[0].cart;
-    const totalPrice = cartItems.reduce(
-      (total, item) => total + parseInt(item.price) * parseInt(item.quantity),
-      0
-    );
-
-    const address = req.body.address;
-    const order = await client.query(
-      "INSERT INTO orders (user_id, total_price, address) VALUES ($1, $2, $3) RETURNING id",
-      [userId, totalPrice, address]
-    );
-    const orderId = order.rows[0].id;
-
-    const orderItemsPromises = cartItems.map((item) => {
-      return client.query(
-        "INSERT INTO order_items (order_id, product_id, name, price, photo, quantity) VALUES ($1, $2, $3, $4, $5, $6)",
-        [
-          orderId,
-          item.productId,
-          item.name,
-          item.price,
-          item.photo,
-          item.quantity,
-        ]
-      );
-    });
-
-    const orderItems = await Promise.all(orderItemsPromises);
-    console.log(orderItems);
-    cartItems.map((item) =>
-      client.query(
-        "UPDATE products SET quantity = quantity - $1 WHERE id = $2",
-        [parseInt(item.quantity), item.productId]
-      )
-    );
     // Clear the cart column in the users table
     await client.query("UPDATE users SET cart = $1 WHERE id = $2", [
       [],
