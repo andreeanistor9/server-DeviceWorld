@@ -1,5 +1,5 @@
 # server-DeviceWorld
-This is the server side of my application.
+This is the server side of my application. Technologies used: Express Node.js, PostgreSQL.
 
 “Device World” is a web application designed for managing electronic products across different categories. The aim of the project is to develop an intuitive and appealing platform for users, where they can purchase and view electronic products, while the administrator has access to additional functionalities for product and user management.
 
